@@ -37,3 +37,9 @@ vignettes/*.pdf
 
 # R Environment Variables
 .Renviron
+
+# Ignore data folder
+data/
+
+# Ignore mac Rstudio files
+.DS_Store

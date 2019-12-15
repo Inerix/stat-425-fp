@@ -1,0 +1,150 @@
+---
+title: "Stormy Weather, Stormy Sales"
+author: "Kara Wong"
+date: "12/15/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
+
+```{r reading_sub_dat}
+trn_s = read_csv("data/trn_s.csv")
+tst = read_csv("data/tst_c.csv")
+```
+
+```{r converting_factors_trn_s}
+trn_s$store_nbr = as.factor(trn_s$store_nbr)
+trn_s$item_nbr = as.factor(trn_s$item_nbr)
+trn_s$station_nbr = as.factor(trn_s$station_nbr)
+trn_s$isWeekend = as.factor(ifelse(trn_s$isWeekend, "weekend", "weekday"))
+levels(trn_s$isWeekend) = c("weekday", "weekend")
+trn_s$store_nbr = as.factor(trn_s$store_nbr)
+trn_s$codesum = as.factor(ifelse(trn_s$codesum, "event", "no-event"))
+levels(trn_s$codesum) = c("no-event", "event")
+```
+
+```{r converting_factors_tst}
+tst$store_nbr = as.factor(tst$store_nbr)
+tst$item_nbr = as.factor(tst$item_nbr)
+tst$station_nbr = as.factor(tst$station_nbr)
+tst$isWeekend = as.factor(ifelse(tst$isWeekend, "weekend", "weekday"))
+levels(tst$isWeekend) = c("weekday", "weekend")
+tst$store_nbr = as.factor(tst$store_nbr)
+tst$codesum = as.factor(ifelse(tst$codesum, "event", "no-event"))
+levels(tst$codesum) = c("no-event", "event")
+```
+
+```{r Tukey-itm-nbr}
+tukey_itmnbr = TukeyHSD(aov(units ~ item_nbr, trn_s))
+idx_t1 = which(tukey_itmnbr$item_nbr[,4] < 0.05)
+t1_sig = tukey_itmnbr$item_nbr[idx_t1,]
+t1_grps = strsplit(rownames(t1_sig), "[-]")
+t1_grp1 = c()
+t1_grp2 = c()
+for (i in 1:length(t1_grps)){
+  obs_i = t1_grps[[i]]
+  t1_grp1[i] = obs_i[1]
+  t1_grp2[i] = obs_i[2]
+}
+t1_grp_df = as.data.frame(cbind(t1_grp1, t1_grp2))
+t1_grp_sig = t1_grp_df %>% 
+  count(t1_grp2)
+
+# how many itm_nbrs have only 1, 2, 3,... other significant difference w/ other itm_nbr
+t1_n = c()
+for (i in 1:nrow(t1_grp_sig)){
+  t1_n[i] = sum(t1_grp_sig$n == i)
+}
+
+# remove those itm_nbrs with n equal to only 1,2,3,4 (we do this so we can run RF)
+t1_rmv_n_idx = which(t1_grp_sig$n %in% c(1:4))
+t1_grp_sig = t1_grp_sig[-t1_rmv_n_idx,]
+
+tuk_sig_itmnbr = t1_grp_sig$t1_grp2
+```
+
+```{r Tukey-store-nbr}
+tukey_strnbr = TukeyHSD(aov(units ~ store_nbr, trn_s))
+idx_t2 = which(tukey_strnbr$store_nbr[,4] < 0.05)
+t2_sig = tukey_strnbr$store_nbr[idx_t2,]
+t2_grps = strsplit(rownames(t2_sig), "[-]")
+t2_grp1 = c()
+t2_grp2 = c()
+for (i in 1:length(t2_grps)){
+  obs_i = t2_grps[[i]]
+  t2_grp1[i] = obs_i[1]
+  t2_grp2[i] = obs_i[2]
+}
+t2_grp_df = as.data.frame(cbind(t2_grp1, t2_grp2))
+t2_grp_sig = t2_grp_df %>% 
+  count(t2_grp2)
+
+# how many store_nbrs have only 1, 2, 3,... other significant difference w/ other itm_nbr
+t2_n = c()
+for (i in 1:nrow(t2_grp_sig)){
+  t2_n[i] = sum(t2_grp_sig$n == i)
+}
+
+# remove those store_nbrs with n equal to only 1 and 2 (we do this so we can run RF)
+t2_rmv_n_idx = which(t2_grp_sig$n %in% c(1:2))
+t2_grp_sig = t2_grp_sig[-t2_rmv_n_idx,]
+
+tuk_sig_strnbr = t2_grp_sig$t2_grp2
+```
+
+```{r modify-trn-tukey}
+trn_tukey = trn_s
+
+levels(trn_tukey$item_nbr) = c(0, levels(trn_tukey$item_nbr))
+trn_tukey$item_nbr[trn_tukey$item_nbr %in% tuk_sig_itmnbr] = 0
+trn_tukey$item_nbr = droplevels(trn_tukey$item_nbr)
+sort(unique(trn_tukey$item_nbr))
+
+levels(trn_tukey$store_nbr) = c(0, levels(trn_tukey$store_nbr))
+trn_tukey$store_nbr[trn_tukey$store_nbr %in% tuk_sig_strnbr] = 0
+trn_tukey$store_nbr = droplevels(trn_tukey$store_nbr)
+sort(unique(trn_tukey$store_nbr))
+```
+
+```{r modify-tst-tukey}
+tst_tukey = tst
+
+levels(tst_tukey$item_nbr) = c(0, levels(tst_tukey$item_nbr))
+tst_tukey$item_nbr[tst_tukey$item_nbr %in% tuk_sig_itmnbr] = 0
+tst_tukey$item_nbr = droplevels(tst_tukey$item_nbr)
+# sort(unique(tst_tukey$item_nbr))
+
+levels(tst_tukey$store_nbr) = c(0, levels(tst_tukey$store_nbr))
+tst_tukey$store_nbr[tst_tukey$store_nbr %in% tuk_sig_strnbr] = 0
+tst_tukey$store_nbr = droplevels(tst_tukey$store_nbr)
+# sort(unique(tst_tukey$store_nbr))
+```
+
+
+```{r elastic-net}
+month_idx = which(colnames(trn_tukey)=="month")
+stationnbr_idx = which(colnames(trn_tukey)=="station_nbr")
+#trn_elnet = trn_tukey[,-c(month_idx, stationnbr_idx)]
+elnet_mod = train(units ~ . - station_nbr - date, 
+                  data = trn_tukey,
+                  method = "glmnet",
+                  trControl = trainControl(method = "cv", number = 5),
+                  metric = "RMSE",
+                  verbose = FALSE)
+
+pred_elnet = predict(elnet_mod, tst_tukey)
+```
+
+```{r}
+bc = boxcox(elnet_mod)
+```
+
+
+
+## Improvements
+
+In this section we explore model selection, interaction terms, and polynomial effects. 
+
+Two categorical variables we wanted to improve upon and include in our  were our (1) item numbers and (2) store numbers. As seen in our exploratory data analysis, there are huge discrepancies between how many units are sold and the type of item it is, as well as which store it was. We first used Tukey's Honest Significant Difference (HSD) to explore which item numbers and store numbers have a significant influence on how our sales were predicted. We found that

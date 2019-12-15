@@ -29,11 +29,11 @@ trn_c = read_csv("data/trn_c.csv")
 ```
 
 ```{r load-s-data}
-trn_s = read_csv("data/sample_trn.csv")
+trn_s = read_csv("data/trn_s.csv")
 ```
 
 ```{r load-test}
-tst = read_csv("data/test_c.csv")
+tst = read_csv("data/tst_c.csv")
 ```
 
 
@@ -85,7 +85,7 @@ trn_c_cat = trn_c %>%
   mutate("top5_nbr" = ifelse(trn_c$item_nbr %in% top5_items, trn_c$item_nbr, "Other"))
 ```
 
-```{r EDA-trn-c-plots}
+```{r EDA-trn-c-plots, cache = TRUE}
 # we can see that most items in our data have low number of sales:
 c01 = trn_c_nbr %>%
   ggplot(aes(x = nbr_unit)) +
@@ -308,7 +308,13 @@ Since in this model, we treated store number and item number as a categorical va
 \newpage
 
 ## Appendix
-include code in the appendix. we will also submit code as a separate attachment
+
+```{r init-weather, eval = FALSE}
+weather_status %>%
+    kable(caption = "M, NA, and VNA represent the count of M's, -'s, and NA's respectively") %>%
+    kable_styling("striped", full_width = FALSE)
+    
+```
 
 #### Data Dictionary
 

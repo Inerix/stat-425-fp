@@ -36,9 +36,9 @@ Joining the weather data to the Walmart data was extremely straightforward as al
 
 When it comes to building the first model, we wanted to keep in as many variables as we could, however, we decided to remove date and station number from model. We chose to remove date because we believed that the actual date would have little to no impact on whether or not someone buys something and instead chose to use our created variables. We also chose to remove station number because the dummy variable that are created to represent each station is perfectly collinear with a certain set of store numbers that the station maps to. The code for the model can be found below.
 
-```{r reading_sub_dat}
+```{r reading_sub_dat, message = FALSE}
 trn_data = read_csv("data/sample_trn.csv")
-tst_dat = read_csv("data/tst_data_comb.csv")
+tst_dat = read_csv("data/test_c.csv")
 ```
 
 ```{r converting_factors_trn}

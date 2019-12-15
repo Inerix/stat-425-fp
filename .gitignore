@@ -43,3 +43,4 @@ data/
 
 # Ignore mac Rstudio files
 .DS_Store
+.Rproj.user

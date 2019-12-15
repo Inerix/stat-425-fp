@@ -191,6 +191,11 @@ trn_data = trn_data %>%
 
 ```
 
+```{r}
+tst_data = tst_data %>%
+    left_join(., key, by = c("store_nbr")) %>%
+    left_join(., weather_data_c, by = c("station_nbr", "date"))
+```
 
 
 ```{r, eval = FALSE}
@@ -199,12 +204,8 @@ sample_ind = createDataPartition(trn_data$store_nbr, list = FALSE, p = .05)
 
 f_sam = trn_data[sample_ind,]
 
-#f_sam = type.convert(f_sam)
-
-#f_sam$codesum = as.factor(f_sam$codesum)
-#f_sam$isWeekend = as.factor(f_sam$isWeekend)
-
-write_csv(f_sam, "data/sample_trn.csv")
+#write_csv(f_sam, "data/sample_trn.csv")
+write_csv(trn_data, "data/trn_c.csv")
 ```
 
 
@@ -226,7 +227,7 @@ Before we could build our first linear model, we had to stitch the weather data 
 
 At an initial glance, we could see that the weather data was extremely incomplete.
 
-```{r init-weather}
+```{r init-weather, eval = FALSE}
 weather_status %>%
     kable(caption = "M, NA, and VNA represent the count of M's, -'s, and NA's respectively") %>%
     kable_styling("striped", full_width = FALSE)

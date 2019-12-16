@@ -22,6 +22,9 @@ library(ggplot2)
 library(gridExtra)
 library(egg)
 library(corrplot)
+library(glmnet)
+library(MASS)
+library(car)
 ```
 
 ```{r load-data}
@@ -306,6 +309,327 @@ Since in this model, we treated store number and item number as a categorical va
 ## Improvements
 
 \newpage
+
+```{r Tukey-itm-nbr}
+tukey_itmnbr = TukeyHSD(aov(units ~ item_nbr, trn_s))
+idx_t1 = which(tukey_itmnbr$item_nbr[,4] < 0.05)
+t1_sig = tukey_itmnbr$item_nbr[idx_t1,]
+t1_grps = strsplit(rownames(t1_sig), "[-]")
+t1_grp1 = c()
+t1_grp2 = c()
+for (i in 1:length(t1_grps)){
+  obs_i = t1_grps[[i]]
+  t1_grp1[i] = obs_i[1]
+  t1_grp2[i] = obs_i[2]
+}
+t1_grp_df = as.data.frame(cbind(t1_grp1, t1_grp2))
+t1_grp_sig = t1_grp_df %>% 
+  count(t1_grp2)
+
+# how many itm_nbrs have only 1, 2, 3,... other significant difference w/ other itm_nbr
+t1_n = c()
+for (i in 1:nrow(t1_grp_sig)){
+  t1_n[i] = sum(t1_grp_sig$n == i)
+}
+
+# remove those itm_nbrs with n equal to only 1,2,3,4 (we do this so we can run RF)
+t1_rmv_n_idx = which(t1_grp_sig$n %in% c(1:4))
+t1_grp_sig = t1_grp_sig[-t1_rmv_n_idx,]
+
+tuk_sig_itmnbr = t1_grp_sig$t1_grp2
+```
+
+```{r Tukey-store-nbr}
+tukey_strnbr = TukeyHSD(aov(units ~ store_nbr, trn_s))
+idx_t2 = which(tukey_strnbr$store_nbr[,4] < 0.05)
+t2_sig = tukey_strnbr$store_nbr[idx_t2,]
+t2_grps = strsplit(rownames(t2_sig), "[-]")
+t2_grp1 = c()
+t2_grp2 = c()
+for (i in 1:length(t2_grps)){
+  obs_i = t2_grps[[i]]
+  t2_grp1[i] = obs_i[1]
+  t2_grp2[i] = obs_i[2]
+}
+t2_grp_df = as.data.frame(cbind(t2_grp1, t2_grp2))
+t2_grp_sig = t2_grp_df %>% 
+  count(t2_grp2)
+
+# how many store_nbrs have only 1, 2, 3,... other significant difference w/ other itm_nbr
+t2_n = c()
+for (i in 1:nrow(t2_grp_sig)){
+  t2_n[i] = sum(t2_grp_sig$n == i)
+}
+
+# remove those store_nbrs with n equal to only 1 and 2 (we do this so we can run RF)
+t2_rmv_n_idx = which(t2_grp_sig$n %in% c(1:2))
+t2_grp_sig = t2_grp_sig[-t2_rmv_n_idx,]
+
+tuk_sig_strnbr = t2_grp_sig$t2_grp2
+```
+
+```{r modify-trn-tukey}
+trn_tukey = trn_s
+
+levels(trn_tukey$item_nbr) = c(0, levels(trn_tukey$item_nbr))
+trn_tukey$item_nbr[trn_tukey$item_nbr %in% tuk_sig_itmnbr] = 0
+trn_tukey$item_nbr = droplevels(trn_tukey$item_nbr)
+# sort(unique(trn_tukey$item_nbr))
+
+levels(trn_tukey$store_nbr) = c(0, levels(trn_tukey$store_nbr))
+trn_tukey$store_nbr[trn_tukey$store_nbr %in% tuk_sig_strnbr] = 0
+trn_tukey$store_nbr = droplevels(trn_tukey$store_nbr)
+# sort(unique(trn_tukey$store_nbr))
+```
+
+```{r modify-tst-tukey}
+tst_tukey = tst
+
+levels(tst_tukey$item_nbr) = c(0, levels(tst_tukey$item_nbr))
+tst_tukey$item_nbr[tst_tukey$item_nbr %in% tuk_sig_itmnbr] = 0
+tst_tukey$item_nbr = droplevels(tst_tukey$item_nbr)
+# sort(unique(tst_tukey$item_nbr))
+
+levels(tst_tukey$store_nbr) = c(0, levels(tst_tukey$store_nbr))
+tst_tukey$store_nbr[tst_tukey$store_nbr %in% tuk_sig_strnbr] = 0
+tst_tukey$store_nbr = droplevels(tst_tukey$store_nbr)
+# sort(unique(tst_tukey$store_nbr))
+```
+
+
+```{r elastic-net}
+month_idx = which(colnames(trn_tukey)=="month")
+stationnbr_idx = which(colnames(trn_tukey)=="station_nbr")
+#trn_elnet = trn_tukey[,-c(month_idx, stationnbr_idx)]
+elnet_mod = train(units ~ . - station_nbr - date, 
+                  data = trn_tukey,
+                  method = "glmnet",
+                  trControl = trainControl(method = "cv", number = 5),
+                  metric = "RMSE",
+                  verbose = FALSE)
+
+pred_elnet = predict(elnet_mod, tst_tukey)
+```
+
+
+```{r box-cox-findLambda}
+bc_trn = trn_s
+bc_trn$units_bc = (bc_trn$units + 1)
+
+lm1_bc = lm(units_bc ~ . - date - month - units - station_nbr,
+                data = bc_trn)
+
+bc_lm1 = boxcox(lm1_bc, lambda = seq(-20,-10, .1))
+
+lambda = bc_lm1$x[which.max(bc_lm1$y)]
+```
+
+```{r box-cox-transformation}
+# transform our y according to box cox lambda
+trn_bc_trans = bc_trn
+trn_bc_trans$units_bc = (trn_bc_trans$units_bc^lambda - 1)/lambda
+
+lm1_bctrans = lm(units_bc ~ . - date - month - units - station_nbr,
+                data = trn_bc_trans)
+
+# residuals are a lot better, though still not good.  
+# qqnorm(lm1_bctrans$residuals)
+# qqline(lm1_bctrans$residuals)
+```
+
+```{r without-bc-transformation}
+# qqnorm(lm1_bc$residuals)
+# qqline(lm1_bc$residuals)
+```
+
+
+```{r CV-linear-mods}
+set.seed(425)
+lm1_mod = train(units ~ store_nbr + item_nbr + resultspeed + heat,
+                data = trn_s,
+                method = "lm",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE"
+                )
+
+set.seed(425)
+lm2_mod = train(units ~ store_nbr + item_nbr + resultspeed,
+                data = trn_s,
+                method = "lm",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE"
+                )
+
+set.seed(425)
+lm3_mod = train(units ~ store_nbr + item_nbr,
+                data = trn_s,
+                method = "lm",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE"
+                )
+
+set.seed(425)
+lm3_mod = train(units ~ store_nbr + item_nbr,
+                data = trn_s,
+                method = "lm",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE"
+                )
+# doesnt help
+set.seed(425)
+lm4_mod = train(units ~ store_nbr*resultspeed + item_nbr,
+                data = trn_s,
+                method = "lm",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE"
+                )
+
+set.seed(425)
+lm5_mod = train(units ~ store_nbr*heat + item_nbr,
+                data = trn_s,
+                method = "lm",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE"
+                )
+
+set.seed(425)
+lm6_mod = train(units ~ store_nbr*tmax + item_nbr,
+                data = trn_s,
+                method = "lm",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE"
+                )
+
+set.seed(425)
+lm7_mod = train(units ~ store_nbr + tmax + item_nbr,
+                data = trn_s,
+                method = "lm",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE"
+                )
+
+set.seed(425)
+lm8_mod = train(units ~ store_nbr + item_nbr + dewpoint,
+                data = trn_s,
+                method = "lm",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE"
+                )
+
+set.seed(425)
+lm9_mod = train(units ~ store_nbr,
+                data = trn_s,
+                method = "lm",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE"
+                )
+
+set.seed(425)
+lm10_mod = train(units ~ item_nbr,
+                data = trn_s,
+                method = "lm",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE"
+                )
+
+```
+
+
+```{r}
+ss = read_csv("data/sampleSubmission.csv")
+f = predict(lm9_mod, tst)
+f = round(f, 0)
+f[f < 0] = 0
+ss$units = f
+write_csv(ss, "data/first_trial.csv")
+```
+
+
+#### Extra models
+
+```{r}
+trn_cut1 = trn_s
+trn_cut1$concatStrItem = paste0(trn_cut1$store_nbr, sep = ", ", trn_cut1$item_nbr)
+trn_cut2 = trn_s
+
+# see which stores and items together have NEVER sold anything
+noSell_df = trn_s %>%
+  group_by(store_nbr, item_nbr) %>% 
+  summarise("totUnits" = sum(units)) %>% 
+  filter(totUnits == 0)
+# 4745 out of 4995 combinations of store number and item number NEVER SELL!!!!!!!! 
+
+# following two lines help us retrieve the indices for the combinations that never sell
+noSell_strItem = data.frame("store_nbr" = noSell_df$store_nbr, "item_nbr" = noSell_df$item_nbr,
+                            "concatStrItem" = paste0(noSell_df$store_nbr, sep = ", ",
+                                                     noSell_df$item_nbr))
+idx_noSell = which(trn_cut1$concatStrItem %in% noSell_strItem$concatStrItem)
+
+trn_noSell = trn_s[idx_noSell,]
+trn_sell = trn_s[-idx_noSell,]
+```
+
+```{r trnsell-lm-mods}
+set.seed(425)
+lm1_mod = train(units ~ store_nbr + item_nbr + resultspeed + heat,
+                data = trn_sell,
+                method = "lm",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE"
+                )
+
+set.seed(425)
+lm2_mod = train(units ~ store_nbr + item_nbr + resultspeed,
+                data = trn_sell,
+                method = "lm",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE"
+                )
+```
+
+
+
+
+
+
+
+
+```{r trnsell-poisson-reg}
+# pois reg p shitty
+set.seed(425)
+poiss_mod = train(units ~ store_nbr + item_nbr + resultspeed + heat,
+                data = trn_sell,
+                method = "glmnet",
+                family = "poisson",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE"
+                )
+```
+
+
+
+
+
+
+
+```{r EXTR-randomForest}
+library(doParallel)
+c1 = makeForkCluster(3)
+registerDoParallel(c1)
+
+rf_mod = train(units ~ . - station_nbr - date,
+               data = trn_tukey,
+               method = "rf",
+               trControl = trainControl(method = "cv",
+                                        number = 5, 
+                                        allowParallel = TRUE),
+               metric = "RMSE",
+               verbose = FALSE
+               )
+
+stopCluster(c1)
+```
+
 
 ## Appendix
 

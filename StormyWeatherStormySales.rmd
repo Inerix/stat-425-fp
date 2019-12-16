@@ -93,14 +93,15 @@ trn_c_cat = trn_c %>%
 c01 = trn_c_nbr %>%
   ggplot(aes(x = nbr_unit)) +
   ggtitle("# Units Sold per Item") +
-  geom_histogram(bins = 30) 
+  geom_histogram(bins = 30) +
+    xlab("units sold per item type")
 
 c02 = trn_c_nbr %>%
-  filter(nbr_unit < 1000) %>% 
+  filter(nbr_unit < 2000) %>% 
   ggplot(aes(x = nbr_unit)) +
   geom_histogram(bins = 30) +
   theme(legend.position = "none") +
-  ggtitle("Items with Units Sold < 1000") +
+  ggtitle("Items with Units Sold < 2000") +
   xlab("units sold per item type")
 
 c03 = trn_c_nbr %>%
@@ -162,8 +163,11 @@ c14 = trn_c_cat %>%
   xlab("weather event")
 
 c15 = trn_c_cat %>% 
-  ggplot(aes(x = isWeekend, weights = units, fill = top5_nbr)) +
-  geom_bar()
+    mutate(day = weekdays(as.Date(date))) %>%
+  ggplot(aes(x = day, weights = units, fill = top5_nbr)) +
+  geom_bar() + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    scale_x_discrete(limits=c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
 
 # seasonality?
 
@@ -177,21 +181,22 @@ c17 = trn_c_cat %>%
   summarise(avgtmax = mean(tmax)) %>% 
   ggplot(aes(x = as.factor(station_nbr), y = avgtmax)) +
   geom_col() +
-  xlab("station_nbr")
+  xlab("Station")
 
 c18 = trn_c_cat %>% 
   group_by(station_nbr) %>% 
   summarise(avgtmin = mean(tmin)) %>% 
   ggplot(aes(x = as.factor(station_nbr), y = avgtmin)) +
   geom_col() +
-  xlab("station_nbr")
+  xlab("Station")
 
 c19 = trn_c_cat %>% 
   group_by(store_nbr) %>% 
-  summarise(totUnits = sum(units)) %>% 
+  summarise(totUnits = sum(units)) %>%
   ggplot(aes(x = as.factor(store_nbr), y = totUnits)) +
   geom_col() +
-  xlab("store_nbr")
+  xlab("Store Number") + 
+    ylab("Total Units Sold")
 
 ```
 
@@ -206,9 +211,6 @@ lowUnits1_prop = nrow(itm_lowUnits1)/nrow(trn_c_nbr)
 lowUnits2_prop = nrow(itm_lowUnits2)/nrow(trn_c_nbr)
 ```
 
-
-
-
 ## Introduction
 
 While we can't control the weather, we can control how we react to it.
@@ -219,17 +221,13 @@ As part of an existing drive to be able to predict consumer behaviors, weather i
 
 While the idea behind an analysis such as this seem to be extremely useful, actual applications of such a model are extremely limited. When considering models for this data, there is a clear trade of between interpretability and accuracy, the less interpretable, the more accurate. Since this analysis is focused mostly on linear models, the interpretability of the coefficients the most useful aspect to this analysis. This is because while predicting how much you should've stocked is relatively useful information, using models such as the ones explored below to predict how much you should stock will be relatively fruitless. This is because in order to "predict" the future using these models, you will need to have access to accurate weather data in the future. Usually weather data is relatively accurate for one-week out forecasts [^4], however, through experience, everyone knows that the weather forecast can change from day to day. This level of uncertainty leads to uncertainties in the model, which in turn, makes them less reliable. 
 
-The data used in this analysis was provided by Walmart as part of a recruiting event on Kaggle [^3]. On Kaggle, they provided training and testing datasets. In addition to those files, they also provided a key to map stores to stations and a collection of relevant weather station data from the NOAA. The data spans 45 different Walmart locations, 20 different weather stations, and over 2 years of data. The objective that 
-
-Our objective is to predict the amount of units sold for each product with regards to major weather events. 
-
-# WHAT DOES THE DATA LOOK LIKE? DESCRIBE BACKGROUND INFO. WHAT MODELS DO WE USE?
+The data used in this analysis was provided by Walmart as part of a recruiting event on Kaggle [^3]. On Kaggle, they provided training and testing datasets. In addition to those files, they also provided a key to map stores to stations and a collection of relevant weather station data from the NOAA. The data spans 45 different Walmart locations, 20 different weather stations, and over 2 years of data. The data initially provided is relatively messy as the weather data has a lot of missing values The objective of this analysis is to predict the amount of units sold for each product with regards to major weather events. 
 
 ## Exploratory Data Analysis
 
 Our first observation when looking into our dataset is that our dataset has a lot of items with low sales. In fact, out of the 111 items, `r round(lowUnits2_prop*100, 0)`%  have less than 1,000 sales and `r round(lowUnits1_prop*100, 0)`% have less than 500 sales. On the other hand, the top-five highest selling items all have over 10,000 units sold. Below, we have provided summary statistics for the number of units sold per item type, as well as a graphical representation.
 
-```{r}
+```{r, cache = TRUE}
 nbrunit_sum = summary(trn_c_nbr$nbr_unit)
 
 tibble(
@@ -242,53 +240,56 @@ tibble(
   ) %>% 
   kable(digits = 4,
         caption = "Table: Summary of Number of Units Sold per Item Type") %>% 
-  kable_styling("striped", full_width = FALSE)
+  kable_styling(latex_options = c("striped", "hold_position"), full_width = FALSE)
 ```
 
 ```{r, message = FALSE, echo=FALSE, fig.width=8, fig.height=4}
 gridExtra::grid.arrange(c01, c02, ncol = 2)
 ```
 
+From the graphs above, we can see how drastic the difference of sales between items truly is. This discrepancy was briefly touched on in the inital Kaggle posting when Walmart said that some of these items might be everyday objects such as milk. In order to get a better idea on the actual distribution of the number of items sold, if we look at the distributions of items with under 2,000 sold, we can see that most of the items sold are between 500 and 700 units sold. This is relatively interesting as this averages to a little bit under one unit sold a day. The most important thing to get from these graphs however, is still the discrepance between items. Before even fitting models, it's clear that there are going to be many influential "outliers" because the item that sold the most sold 1005111 items which is approximately 1400 units per day across all stores. When compared to the 1 unit per day of most observations, it becomes clear that modeling all of the variables at once is going to be challenging.
+
 An important thing to note about our dataset is that it does not capture the discrepancies between inventory and demand. The number of units sold may show 0, but this may not necessarily mean that the item was not in demand, as it could just simply have been out of stock or discontinued. This may be an issue when it comes to making predictions.
 
-We then analyze the amount of units sold of these top-five selling items based on the weather-based metrics provided (maximum/min temperature, dewpoint, etc.) The five highest selling items from highest to lowest are items: 45, 9, 5, 44, and 16. From the following plots, we can see that more purchases are made when it's hot and humid, when it's not too windy, and on weekdays. From the plots below, we can also see that there isn't one item type that is driving sales based on these weather metrics, as it seems that all item types' sales follow a similar distribution. More of these plots can be found in the Appendix.
+We then decided to analyze the amount of units sold of these top-five selling items based on the weather-based metrics provided (maximum/min temperature, dewpoint, etc.). The five highest selling items from highest to lowest are items: 45, 9, 5, 44, and 16. From the following plots, we can see that more purchases are made when it's hot and humid, when it's not too windy, and on weekdays. The most important takeaway from these plots however, is that the top five selling items all seem to follow a similar distribution when it comes to units sold. This means that if we could hypothetically accurately predict items sold from the weather data, we should be able to accurately predict units sold across most of the items. From the rightmost plot, we can see that the same idea of the weather data holds as well for days in that the items follow a similar distribution across the days of the week. This graph also confirms our initial ideas that the weekend has more sales that the other days of the week, thus leading us to create a categorical variable to represent weekend vs weekday. From the plots below, we can also see that there isn't one item type that is driving sales based on these weather metrics. More of these plots can be found in the Appendix.
 
-```{r, message = FALSE, echo=FALSE}
+```{r, message = FALSE, echo = FALSE}
 gridExtra::grid.arrange(c04, c06, c13, c15, ncol = 2)
 ```
 
-\
-In addition to comparing the amount of sales on weekdays versus weekends, we also looked to see if there were any seasonal differences that could be driving sales. We extracted the month from `date` and provided a graph below that shows how there seems to be a downward trend in sales starting from January.
+In addition to comparing the amount of sales on weekdays versus weekends, we also looked to see if there were any seasonal differences that could be driving sales. We extracted the month from `date` and provided a graph below that shows how there seems to be a downward trend in sales starting from January. This is a bit suprising considering that during the winter months, the temperature is approximately the same. While the graph below hint that seasons and months might not be a strong predictor of units sold, we still believe that months might be relevant as we wanted to create a variable that might capture the data represented by temperature and time since we are planning to removing date. Season on the other hand, seems to be completely irrelevant as their isn't a hint of consistency within each season as shown below.
 
 ```{r, fig.width=7, fig.height=4}
 c16
 ```
 
 
-We've also examined correlations between our variables, and can see that many are correlated. From this, we can already anticipate linear regression model selection.
+From the correlation plot below, we can see that all of the temperature data is highly correlated with each other. From this, we can anticipate that if we ran variable selection on this dataset, we would end up removing multiple variables. The rain and wind data seems more promising as they are very loosely correlated with all the other variables in this data set. While the correlation between the max temperature and the min temperature in a day is expected, we'd hoped for there to be more of a deviation. However, we still decided to remove the average temperature instead of the minimum and maximum temperature as we think that the more extreme the temperature might be, the better a predictor it will be.
 
 ```{r EDA-correlation-matrix, fig.width=3, fig.height=3}
 cm_data = cor(trn_c[,-c(1,2,3,5,12,18,19,20)])
 corrplot(cm_data, method = "circle")
 ```
 
-
-## Linear Regression Model
-
 Before we could build our first linear model, we had to stitch the weather data to the original dataset provided by Walmart. The main bulk of the work when it came to this process was cleaning the weather data to a point where it could be added together.
 
-At an initial glance, we could see that the weather data was extremely incomplete (see Figure 8.) When aggregated to a station level, every single station had some sort of missing data. The variables that were missing the most data were depart, sunrise, sunset, and snowfall. Each of these variables had over 50% of their total data across all stations missing. With this many missing observations, we decided that it would be extremely unreasonable to try and impute data for that many missing observations as we were neither knowledgeable enough about weather, nor knowledgeable enough about the stations themselves to be able to classify these missing observations as anything other than "structurally missing". Therefore, since there was nothing we could do on our own to make these variables complete, we chose to remove them from the data. A variable which was close to the cusp in terms of being "un-imputable" was sea level. However, we quickly noted that sea level was pretty much identical to stnpressure (station pressure) as they both measured approximately the same thing. Since these two variables are pretty much perfectly collinear, we chose to remove sea level as there were far more observations for station pressure. Another variable we removed due to multicollinearity is tavg, or the average temperature of the day. When we looked into it, the value is calculated as the average of the minimum temperature and the maximum temperature. We chose to remove the average because we believed that the more extreme weather experienced, which would be captured better by min and max temperature, the more likely people are to buy weather related gear.
+At an initial glance, we could see that the weather data was extremely incomplete *Fig.1*. When aggregated to a station level, every single station had some sort of missing data. The variables that were missing the most data were depart, sunrise, sunset, and snowfall. Each of these variables had over 50% of their total data across all stations missing. With this many missing observations, we decided that it would be extremely unreasonable to try and impute data for that many missing observations as we were neither knowledgeable enough about weather, nor knowledgeable enough about the stations themselves to be able to classify these missing observations as anything other than "structurally missing". Therefore, since there was nothing we could do on our own to make these variables complete, we chose to remove them from the data. A variable which was close to the cusp in terms of being "un-imputable" was sea level. However, we quickly noted that sea level was pretty much identical to stnpressure (station pressure) as they both measured approximately the same thing. Since these two variables are pretty much perfectly collinear, we chose to remove sea level as there were far more observations for station pressure. Another variable we removed due to multicollinearity is tavg, or the average temperature of the day. When we looked into it, the value is calculated as the average of the minimum temperature and the maximum temperature. We chose to remove the average because we believed that the more extreme weather experienced, which would be captured better by min and max temperature, the more likely people are to buy weather related gear.
 
 While removing a couple of variables definitely improved on the amount of missing data remaining, almost every single variable and station combination had some number of missing data. However, the amount of data missing at this point was extremely trivial ranging from ~ `r 5/10`% of each station's data. Given that very few observations were missing, we felt relatively comfortable imputing a four day moving average for the missing observations. While this method cleaned up most of the variables for all of the stations except one. Once we aggregated the data to a station level, it became clear that station five had an un-imputable amount of data. Usually in these circumstances, we would remove the station completely, however, since we needed to have matching data for every store in Walmart's initial dataset we had to come up with a way to impute multiple values. To do this, we aggregated the data to a day level and imputed the mean of all the other station's observations at that day. 
 
-Before we finish with our weather data, we decided to create additional variables off of the weather data. When looking over the variables provided, one really stood out and that was date. We thought that it would be incredibly naive to think that the actual value of the date would have some predictive power over the number of units sold so instead; we constructed two categorical variables to suplant the use of the date. We decided that whether or not the day was a weekend and what season the day would fall under would be far more predictive as it narrows down the date to certain features related to it. While we thought that seasons might be really interesting as it sort of has to do with the weather, we were a bit worried about whether or not the change in seasons would already be reflected in the temperature data. We ultimately decided to leave it in as some locations such as California, barely have temperature change. We also changed codeSum from a set of strings representing weather events to a categorical variable representing whether or not some weather event happened on the day.
+Before we finish with our weather data, we decided to create additional variables off of the weather data. When looking over the variables provided, one really stood out and that was date. We thought that it would be incredibly naive to think that the actual value of the date would have some predictive power over the number of units sold so instead; we constructed two categorical variables to suplant the use of the date. We decided that whether or not the day was a weekend and what season the day would fall under would be far more predictive as it narrows down the date to certain features related to it. While we thought that seasons might be really interesting as it sort of has to do with the weather, we were a bit worried about whether or not the change in seasons would already be reflected in the temperature data. However, through our EDA process, it became very clear that there wasn't a clear trend represented by the different seasons, thus leading us to remove it from the first model. We also changed codeSum from a set of strings representing weather events to a categorical variable representing whether or not some weather event happened on the day.
+
+\newpage
+
+## Linear Regression Model
 
 Joining the weather data to the Walmart data was extremely straightforward as all it required was two left joins. The first was to match a station to each store using the provided key. The last join was on the station number and the date, thus giving us a fully merged data set.
 
 When it comes to building the first model, we wanted to keep in as many variables as we could, however, we decided to remove date and station number from model. We chose to remove date because we believed that the actual date would have little to no impact on whether or not someone buys something and instead chose to use our created variables. We also chose to remove station number because the dummy variable that are created to represent each station is perfectly collinear with a certain set of store numbers that the station maps to. The code for the model can be found below.
 
 ```{r first_model, include = TRUE}
-md1 = lm(units ~ . - date - station_nbr - month, data = trn_s)
+md1 = lm(units ~ . - date - station_nbr - season, data = trn_s)
+md1_coef = summary(md1)$coefficients[3:7,]
 ```
 
 ```{r first_model_kaggle, eval = FALSE}
@@ -302,6 +303,22 @@ write_csv(tst_dat, "data/test_c.csv")
 ```
 
 Since in this model, we treated store number and item number as a categorical variable, there are `r length(md1$coefficients) - 1` total variables not including the intercept in this model. When looking at the summary output for this model, it becomes clear that matching store numbers is one of the best ways to predict the amount of unit sales. However, like all categorical variables with an extreme number of factors, not all of the levels are significant. Item number also follows a similar trend in that there are some levels which have coefficients indistinguishable from zero, but most of the levels are irrelevant. We think that this is because most of the items sell less than one a day. Both of these issues will be explored further in the next section of this report.
+
+The initial Kaggle score for the initial model with all of the variables is .74047 which was good for 475th on the leaderboard. 
+
+Taking a deeper dive into the summary of all the stores, there were `r nrow(md1_coef)` stores that had a siginificant coefficient. This is particularly interesting because when looking at the coefficients for each of these stores, all of them were overwhelmingly positive, this means that those stores sold far more than the average number of items when compare to other stores. The positive nature of these coefficients also makes sense when the intercept is taken into consideration. The intercept for this linear model was -9.436489e-02 which is pretty much 0 which explains the fact that the intercept was insignificant. The intercept in this scenario is confounded with the first store and first item which makes its coefficient almost impossible to understand on its own.
+
+```{r LR-pred-v-act-1}
+sam = sample(1:nrow(trn_c), round(nrow(trn_c) * .4, 0))
+plot(predict(md1)[sam], trn_s$units[sam], xlab = "Fitted", ylab = "Actual")
+abline(0,1)
+```
+
+When looking at the plot of actual vs fitted values above, we can see that the intial model massively underpredicts for a lot of the items. We think that this is probably due to extreme dichotomy of the number of units sold between the stores. We can see that the store which sold the most units in total tops out at approximately 300,000 units while the stores that sold the least only sold less than 10,000 units. This dichotomy is deadly to a linear model because it ends up fitting close to the middle of the two which in turn means that you simultaneously overpredict and underpredict. Methods of which to help fix this issue will be explored in the next section. 
+
+The thoughts that we expressed in the previous paragraph regarding the dichotomy of the observations is also reflected in the plot of leverages vs cook's distance *Fig.5*. This plot is extremely intersting as it suggests that most of the observations are extremely influential. This again confirms our suspicions about the nature of the data. 
+
+Apart from the heavily categorical variables, all the other variables in the model were isignificant except for dewpoint (at an alpha of .1). This hints that the weather data isn't predictive at all for the number of units sold which is a bit disheartening.
 
 #### Diagnostics
 
@@ -633,12 +650,62 @@ stopCluster(c1)
 
 ## Appendix
 
-```{r init-weather, eval = FALSE}
+*Fig.1* Initial state of weather data
+
+```{r, warning = FALSE}
+weather_data = read_csv("data/weather.csv")
+
+w_g = weather_data %>%
+    group_by(station_nbr) %>%
+    group_split()
+
+miss_vars = lapply(w_g, function(dat){
+    miss_vals = c()
+    for(i in 3:ncol(dat)){
+        miss_vals[i-2] = ifelse(sum(is.na(dat[,i])) > 0, paste(sum(is.na(dat[,i])), "NA values"), 
+                                ifelse(sum(dat[,i] == "M") > 0, paste(sum(dat[,i] == "M"), "M"), 
+                                    ifelse(sum(dat[,i] == "-") > 0, paste(sum(dat[,i] == "-"),"VNA"),
+                                           ifelse(sum(dat[,i] == "T"), paste(sum(dat[,i] == "T"), "Trace"), "OK"))))
+    }
+    names(miss_vals) <- names(dat)[3:ncol(dat)]
+    return(miss_vals)
+})
+
+weather_status = as.data.frame(do.call(rbind, miss_vars))
+```
+
+
+```{r AP-init-weather, warning = FALSE}
 weather_status %>%
     kable(caption = "M, NA, and VNA represent the count of M's, -'s, and NA's respectively") %>%
-    kable_styling("striped", full_width = FALSE)
-    
+    kable_styling("striped", latex_options = c("scale_down", "hold_position"))
 ```
+
+*Fig.2* Sample of statistics of first model
+
+```{r AP-summary-stat-lm1, eval = FALSE}
+md1_coef
+```
+
+*Fig.3* Sample of plot of residuals of first model
+
+```{r AP-pred-v-res-1}
+sam = sample(1:nrow(trn_s), round(nrow(trn_s) * .4, 0))
+plot(predict(md1)[sam], md1$residuals[sam], xlab = "Fitted", ylab = "Residuals")
+```
+
+*Fig.5* Distributions of sales by store
+
+```{r APP-dist-sale}
+c19
+```
+
+*Fig.6* Plot of first linear model
+
+```{r APP-resid-lev-p1, cache = TRUE}
+plot(md1, which = 5)
+```
+
 
 #### Data Dictionary
 
@@ -661,7 +728,7 @@ weather_status %>%
 #### EDA
 
 
-```{r, include = TRUE}
+```{r, include = TRUE, cache = TRUE}
 gridExtra::grid.arrange(c04, c05, c06, 
                         c07, c08, c09, 
                         c10, c11, c12,

@@ -227,7 +227,7 @@ The data used in this analysis was provided by Walmart as part of a recruiting e
 
 Our first observation when looking into our dataset is that our dataset has a lot of items with low sales. In fact, out of the 111 items, `r round(lowUnits2_prop*100, 0)`%  have less than 1,000 sales and `r round(lowUnits1_prop*100, 0)`% have less than 500 sales. On the other hand, the top-five highest selling items all have over 10,000 units sold. Below, we have provided summary statistics for the number of units sold per item type, as well as a graphical representation.
 
-```{r, cache = TRUE}
+```{r quartile-units-p-item, cache = TRUE}
 nbrunit_sum = summary(trn_c_nbr$nbr_unit)
 
 tibble(
@@ -243,7 +243,7 @@ tibble(
   kable_styling(latex_options = c("striped", "hold_position"), full_width = FALSE)
 ```
 
-```{r, message = FALSE, echo=FALSE, fig.width=8, fig.height=4}
+```{r dist-units-sold, message = FALSE, echo=FALSE, fig.width=8, fig.height=4}
 gridExtra::grid.arrange(c01, c02, ncol = 2)
 ```
 
@@ -253,13 +253,13 @@ An important thing to note about our dataset is that it does not capture the dis
 
 We then decided to analyze the amount of units sold of these top-five selling items based on the weather-based metrics provided (maximum/min temperature, dewpoint, etc.). The five highest selling items from highest to lowest are items: 45, 9, 5, 44, and 16. From the following plots, we can see that more purchases are made when it's hot and humid, when it's not too windy, and on weekdays. The most important takeaway from these plots however, is that the top five selling items all seem to follow a similar distribution when it comes to units sold. This means that if we could hypothetically accurately predict items sold from the weather data, we should be able to accurately predict units sold across most of the items. From the rightmost plot, we can see that the same idea of the weather data holds as well for days in that the items follow a similar distribution across the days of the week. This graph also confirms our initial ideas that the weekend has more sales that the other days of the week, thus leading us to create a categorical variable to represent weekend vs weekday. From the plots below, we can also see that there isn't one item type that is driving sales based on these weather metrics. More of these plots can be found in the Appendix.
 
-```{r, message = FALSE, echo = FALSE}
+```{r 4-plots, message = FALSE, echo = FALSE, cache = TRUE}
 gridExtra::grid.arrange(c04, c06, c13, c15, ncol = 2)
 ```
 
 In addition to comparing the amount of sales on weekdays versus weekends, we also looked to see if there were any seasonal differences that could be driving sales. We extracted the month from `date` and provided a graph below that shows how there seems to be a downward trend in sales starting from January. This is a bit suprising considering that during the winter months, the temperature is approximately the same. While the graph below hint that seasons and months might not be a strong predictor of units sold, we still believe that months might be relevant as we wanted to create a variable that might capture the data represented by temperature and time since we are planning to removing date. Season on the other hand, seems to be completely irrelevant as their isn't a hint of consistency within each season as shown below.
 
-```{r, fig.width=7, fig.height=4}
+```{r units-by-month, fig.width=7, fig.height=4}
 c16
 ```
 
@@ -304,9 +304,9 @@ write_csv(tst_dat, "data/test_c.csv")
 
 Since in this model, we treated store number and item number as a categorical variable, there are `r length(md1$coefficients) - 1` total variables not including the intercept in this model. When looking at the summary output for this model, it becomes clear that matching store numbers is one of the best ways to predict the amount of unit sales. However, like all categorical variables with an extreme number of factors, not all of the levels are significant. Item number also follows a similar trend in that there are some levels which have coefficients indistinguishable from zero, but most of the levels are irrelevant. We think that this is because most of the items sell less than one a day. Both of these issues will be explored further in the next section of this report.
 
-The initial Kaggle score for the initial model with all of the variables is .74047 which was good for 475th on the leaderboard. 
+The initial Kaggle score for the initial model with all of the variables is *.74047* which was good for 475th on the leaderboard. 
 
-Taking a deeper dive into the summary of all the stores, there were `r nrow(md1_coef)` stores that had a siginificant coefficient. This is particularly interesting because when looking at the coefficients for each of these stores, all of them were overwhelmingly positive, this means that those stores sold far more than the average number of items when compare to other stores. The positive nature of these coefficients also makes sense when the intercept is taken into consideration. The intercept for this linear model was -9.436489e-02 which is pretty much 0 which explains the fact that the intercept was insignificant. The intercept in this scenario is confounded with the first store and first item which makes its coefficient almost impossible to understand on its own.
+Taking a deeper dive into the summary of all the stores, there were `r nrow(md1_coef)` stores that had a siginificant coefficient. This is particularly interesting because when looking at the coefficients for each of these stores, all of them were overwhelmingly positive, this means that those stores sold far more than the average number of items when compare to other stores. The positive nature of these coefficients also makes sense when the intercept is taken into consideration. The intercept for this linear model was 1.622 which is pretty interesting because it was insignificant while having a decently large "coefficient". The intercept in this scenario is confounded with the first store and first item which makes its coefficient almost impossible to understand on its own.
 
 ```{r LR-pred-v-act-1}
 sam = sample(1:nrow(trn_c), round(nrow(trn_c) * .4, 0))
@@ -320,12 +320,26 @@ The thoughts that we expressed in the previous paragraph regarding the dichotomy
 
 Apart from the heavily categorical variables, all the other variables in the model were isignificant except for dewpoint (at an alpha of .1). This hints that the weather data isn't predictive at all for the number of units sold which is a bit disheartening.
 
-#### Diagnostics
-
+\newpage
 
 ## Improvements
 
-\newpage
+```{r CV-linear-mods, cache = TRUE, cache.lazy = FALSE}
+set.seed(425)
+lminit_mod = train(units ~ . - date - station_nbr - season,
+                data = trn_s,
+                method = "lm",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE")
+
+set.seed(425)
+lm1_mod = train(units ~ store_nbr + item_nbr + tmax + dewpoint + cool + avgspeed,
+                data = trn_s,
+                method = "lm",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE")
+
+```
 
 ```{r Tukey-itm-nbr}
 tukey_itmnbr = TukeyHSD(aov(units ~ item_nbr, trn_s))
@@ -339,21 +353,21 @@ for (i in 1:length(t1_grps)){
   t1_grp1[i] = obs_i[1]
   t1_grp2[i] = obs_i[2]
 }
-t1_grp_df = as.data.frame(cbind(t1_grp1, t1_grp2))
+t1_grp_df = data.frame("V1" = c(t1_grp1, t1_grp2), "V2" = c(t1_grp2, t1_grp1))
+
 t1_grp_sig = t1_grp_df %>% 
-  count(t1_grp2)
+  group_by(V1) %>%
+    summarise("diff_from" = n())
 
-# how many itm_nbrs have only 1, 2, 3,... other significant difference w/ other itm_nbr
-t1_n = c()
-for (i in 1:nrow(t1_grp_sig)){
-  t1_n[i] = sum(t1_grp_sig$n == i)
-}
+diff_item = as.numeric(as.character(t1_grp_sig$V1[t1_grp_sig$diff_from != 10]))
 
-# remove those itm_nbrs with n equal to only 1,2,3,4 (we do this so we can run RF)
-t1_rmv_n_idx = which(t1_grp_sig$n %in% c(1:4))
-t1_grp_sig = t1_grp_sig[-t1_rmv_n_idx,]
+trn_tukey = trn_s
 
-tuk_sig_itmnbr = t1_grp_sig$t1_grp2
+levels(trn_tukey$item_nbr) = c(0, levels(trn_tukey$item_nbr))
+
+trn_tukey$item_nbr[!(trn_tukey$item_nbr %in% diff_item)] = 0
+
+trn_tukey$item_nbr = droplevels(trn_tukey$item_nbr)
 ```
 
 ```{r Tukey-store-nbr}
@@ -368,66 +382,82 @@ for (i in 1:length(t2_grps)){
   t2_grp1[i] = obs_i[1]
   t2_grp2[i] = obs_i[2]
 }
-t2_grp_df = as.data.frame(cbind(t2_grp1, t2_grp2))
+
+t2_grp_df = data.frame("V1" = c(t2_grp1, t2_grp2), "V2" = c(t2_grp2, t2_grp1))
+
 t2_grp_sig = t2_grp_df %>% 
-  count(t2_grp2)
+  group_by(V1) %>%
+    summarise("diff_from" = n())
 
-# how many store_nbrs have only 1, 2, 3,... other significant difference w/ other itm_nbr
-t2_n = c()
-for (i in 1:nrow(t2_grp_sig)){
-  t2_n[i] = sum(t2_grp_sig$n == i)
-}
-
-# remove those store_nbrs with n equal to only 1 and 2 (we do this so we can run RF)
-t2_rmv_n_idx = which(t2_grp_sig$n %in% c(1:2))
-t2_grp_sig = t2_grp_sig[-t2_rmv_n_idx,]
-
-tuk_sig_strnbr = t2_grp_sig$t2_grp2
-```
-
-```{r modify-trn-tukey}
-trn_tukey = trn_s
-
-levels(trn_tukey$item_nbr) = c(0, levels(trn_tukey$item_nbr))
-trn_tukey$item_nbr[trn_tukey$item_nbr %in% tuk_sig_itmnbr] = 0
-trn_tukey$item_nbr = droplevels(trn_tukey$item_nbr)
-# sort(unique(trn_tukey$item_nbr))
+diff_store = as.numeric(as.character(t2_grp_sig$V1[t2_grp_sig$diff_from >= 10]))
 
 levels(trn_tukey$store_nbr) = c(0, levels(trn_tukey$store_nbr))
-trn_tukey$store_nbr[trn_tukey$store_nbr %in% tuk_sig_strnbr] = 0
+
+trn_tukey$store_nbr[!(trn_tukey$store_nbr %in% diff_store)] = 0
+
 trn_tukey$store_nbr = droplevels(trn_tukey$store_nbr)
-# sort(unique(trn_tukey$store_nbr))
 ```
 
 ```{r modify-tst-tukey}
 tst_tukey = tst
 
 levels(tst_tukey$item_nbr) = c(0, levels(tst_tukey$item_nbr))
-tst_tukey$item_nbr[tst_tukey$item_nbr %in% tuk_sig_itmnbr] = 0
+tst_tukey$item_nbr[!(tst_tukey$item_nbr %in% diff_item)] = 0
 tst_tukey$item_nbr = droplevels(tst_tukey$item_nbr)
-# sort(unique(tst_tukey$item_nbr))
+
 
 levels(tst_tukey$store_nbr) = c(0, levels(tst_tukey$store_nbr))
-tst_tukey$store_nbr[tst_tukey$store_nbr %in% tuk_sig_strnbr] = 0
+tst_tukey$store_nbr[!(tst_tukey$store_nbr %in% diff_store)] = 0
 tst_tukey$store_nbr = droplevels(tst_tukey$store_nbr)
-# sort(unique(tst_tukey$store_nbr))
+```
+
+```{r interactions-tukey, cache = TRUE, cache.lazy = FALSE}
+set.seed(425)
+lm2_mod = train(units ~ store_nbr * item_nbr + tmax + dewpoint + cool + avgspeed,
+                data = trn_tukey,
+                method = "lm",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE")
+```
+
+```{r polynomial-initial}
+set.seed(425)
+lmp1_mod = lm(units ~ tmax, data = trn_s )
+lmp2_mod = lm(units ~ dewpoint, data = trn_s )
+lmp3_mod = lm(units ~ cool, data = trn_s )
+```
+
+```{r first-poly}
+set.seed(425)
+lm3_mod = train(units ~ store_nbr + item_nbr + poly(tmax, 2) + dewpoint + cool + avgspeed,
+                data = trn_s,
+                method = "lm",
+                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
+                metric = "RMSE")
 ```
 
 
-```{r elastic-net}
-month_idx = which(colnames(trn_tukey)=="month")
-stationnbr_idx = which(colnames(trn_tukey)=="station_nbr")
-#trn_elnet = trn_tukey[,-c(month_idx, stationnbr_idx)]
-elnet_mod = train(units ~ . - station_nbr - date, 
-                  data = trn_tukey,
-                  method = "glmnet",
-                  trControl = trainControl(method = "cv", number = 5),
-                  metric = "RMSE",
-                  verbose = FALSE)
+Before we began exploring these models further, we chose to validate the results by creating a validation split of 20% of the training data. We chose to use an 80-20 split of the data because it's usually around that by convention. The reason why this split is necessary is that it allows us to test our model on data that it hasn't seen yet, something that we are graded on with the testing split given to use by Walmart. By creating our own data split, we managed to avoid overloading the kaggle submissions and having to spend minutes waiting for results.
 
-pred_elnet = predict(elnet_mod, tst_tukey)
-```
+### Original Data Set
 
+When looking at the summary of the first created model, we could see that all of the weather data was insignificant. To further verify this suspicion, we decided to start the improvements section by regressing the number of units sold on the store number alone. The reason why we used this as a starting point is because from the EDA, it became very clear that the stores differed extremely drastically from each other in terms of units sold. While this "initial" model performed much worse (which was expected) as we removed all the other variables besides store number. A lot of the stores were shown to be significant which means that the stores are significantly different from eachother. From this we interpreted the results to mean that we should focus on incorporating the store number and the item numbers into all of our models.
+
+Next, we decided to try and clean up the weather data a bit. From the plot of all the correlations shown in the EDA, we can see that the weather aspect of the data were all highly correlated with eachother. While it's important to note that high multicollinearity doesn't decrease the predictive power of the model, multicollinearity could lead to overfitting of the model. The best way to explore this is through the variance inflation factors. The idea behind variance inflation factors is that if you regress a term on the rest of the independent variables, you can see which % of variation in that variable is explained with from the rest of the variables. This allows you to keep track of multicollinearity. While normally, I would iteratively remove the highest VIF, in this case, it's extremely clear from the EDA that all of the weather variables are very strongly correlated with eachother. Therefore, we felt comfortable removing multiple variables at one time. In *Figure.5* we can see that the VIF's are way over the "cutoff" of 5. To remedy this, we removed wetbulb, heat, and the minimum temperature. We also noted that we initially missed that there were two highly collinear wind speed terms, average wind speed and results wind speed. We decided to remove resultspeed because avgerage windspeed was far more intuitive to us. This model actually performed better than the initial model. However it must be noted that the difference was almost negligible as the RMSE improved by `r round(lminit_mod$results$RMSE - lm1_mod$results$RMSE, 5)`. This was expected as the models in this "newer" model and the original model all covered extremely similar information. All that we managed to achieve by removing highly correlated variables was improve the interpretability of the model.
+
+The next thing that we wanted to explore were interaction terms. The very first term we wanted to explore was between item and store number. The reason why we thought that this would be relevant was because it would allow the model to account for the relationship between store and item which we could see in *Figure.7* and *Figure.8*. This relationship should theoretically be extremely relevant for some combinations as we can see that the vast majority of combinations never sold any units. The idea behind interaction terms is that it allows you to model more than just a linear relationship between the dependent and independent variable. The reason why we were so optimistic about the relationship between store numberand item number is that the iteraction between two categorical variables is an and between the two variables. Since so many of our store-item combinations can be reduced to 0, we'd hope that the interaction term will just negate the intercept and thus reduce the prediction to 0.
+
+However, while the idea outlined above sounded relatively promising, there are very clear issues when trying to fit a model of this size as just using this interaction would create a model with `r 45 * 111 + 2` variables. To try and work around this, we decided that we wanted to explore possibly reducing the number of factors that are present in the item numbers and store numbers. In order to do this, we conducted Tukey's HSD test on items and store number. 
+
+### Partially Manipulated Data Set
+
+Since we had many levels for each of these categorical variables, 111 for items and 45 stores, we decided that Tukey's Honest Significant Difference was the best method to apply when trying to distinguish between levels. The insight behind Tukey is that 
+
+When we conducted Tukey's test on each of the two variables. When it came to item numbers, many of the items were insignificant from eachother, this isn't really suprising because in the EDA, we found out that there were many items which barely any units at all per day across each store. This was also reflected in our analysis with Tukey as the number of unique items was reduced to `r length(diff_item) + 1`. We used 0 to represent all of the items which were determined to "not" be different. We conducted the exact same analysis on store numbers. However, it turns out that a far larger percent of stores differed from eachother which left us with `r length(diff_store) + 1`. We then tried fitting a model with interactions between item number and store number, however, we were sorely dissapointed as the model performed worse in both our validation subset and the kaggle grader and ended up with a kaggle score of *.748*.
+
+### Fully Manipulated Data Set
+
+Instead of relying on the interaction terms between item number and store number to zero out predictions for certain combos. We decided to just remove those combinations from the data set and just predict 0 for them. This would help in many different ways as it lowers the size of the data set to approximately 200,000 observations. 
 
 ```{r box-cox-findLambda}
 bc_trn = trn_s
@@ -460,101 +490,9 @@ lm1_bctrans = lm(units_bc ~ . - date - month - units - station_nbr,
 ```
 
 
-```{r CV-linear-mods}
-set.seed(425)
-lm1_mod = train(units ~ store_nbr + item_nbr + resultspeed + heat,
-                data = trn_s,
-                method = "lm",
-                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
-                metric = "RMSE"
-                )
-
-set.seed(425)
-lm2_mod = train(units ~ store_nbr + item_nbr + resultspeed,
-                data = trn_s,
-                method = "lm",
-                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
-                metric = "RMSE"
-                )
-
-set.seed(425)
-lm3_mod = train(units ~ store_nbr + item_nbr,
-                data = trn_s,
-                method = "lm",
-                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
-                metric = "RMSE"
-                )
-
-set.seed(425)
-lm3_mod = train(units ~ store_nbr + item_nbr,
-                data = trn_s,
-                method = "lm",
-                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
-                metric = "RMSE"
-                )
-# doesnt help
-set.seed(425)
-lm4_mod = train(units ~ store_nbr*resultspeed + item_nbr,
-                data = trn_s,
-                method = "lm",
-                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
-                metric = "RMSE"
-                )
-
-set.seed(425)
-lm5_mod = train(units ~ store_nbr*heat + item_nbr,
-                data = trn_s,
-                method = "lm",
-                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
-                metric = "RMSE"
-                )
-
-set.seed(425)
-lm6_mod = train(units ~ store_nbr*tmax + item_nbr,
-                data = trn_s,
-                method = "lm",
-                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
-                metric = "RMSE"
-                )
-
-set.seed(425)
-lm7_mod = train(units ~ store_nbr + tmax + item_nbr,
-                data = trn_s,
-                method = "lm",
-                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
-                metric = "RMSE"
-                )
-
-set.seed(425)
-lm8_mod = train(units ~ store_nbr + item_nbr + dewpoint,
-                data = trn_s,
-                method = "lm",
-                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
-                metric = "RMSE"
-                )
-
-set.seed(425)
-lm9_mod = train(units ~ store_nbr,
-                data = trn_s,
-                method = "lm",
-                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
-                metric = "RMSE"
-                )
-
-set.seed(425)
-lm10_mod = train(units ~ item_nbr,
-                data = trn_s,
-                method = "lm",
-                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
-                metric = "RMSE"
-                )
-
-```
-
-
-```{r}
+```{r, eval = FALSE}
 ss = read_csv("data/sampleSubmission.csv")
-f = predict(lm9_mod, tst)
+f = predict(lm2_mod, tst_tukey)
 f = round(f, 0)
 f[f < 0] = 0
 ss$units = f
@@ -564,54 +502,7 @@ write_csv(ss, "data/first_trial.csv")
 
 #### Extra models
 
-```{r}
-trn_cut1 = trn_s
-trn_cut1$concatStrItem = paste0(trn_cut1$store_nbr, sep = ", ", trn_cut1$item_nbr)
-trn_cut2 = trn_s
-
-# see which stores and items together have NEVER sold anything
-noSell_df = trn_s %>%
-  group_by(store_nbr, item_nbr) %>% 
-  summarise("totUnits" = sum(units)) %>% 
-  filter(totUnits == 0)
-# 4745 out of 4995 combinations of store number and item number NEVER SELL!!!!!!!! 
-
-# following two lines help us retrieve the indices for the combinations that never sell
-noSell_strItem = data.frame("store_nbr" = noSell_df$store_nbr, "item_nbr" = noSell_df$item_nbr,
-                            "concatStrItem" = paste0(noSell_df$store_nbr, sep = ", ",
-                                                     noSell_df$item_nbr))
-idx_noSell = which(trn_cut1$concatStrItem %in% noSell_strItem$concatStrItem)
-
-trn_noSell = trn_s[idx_noSell,]
-trn_sell = trn_s[-idx_noSell,]
-```
-
-```{r trnsell-lm-mods}
-set.seed(425)
-lm1_mod = train(units ~ store_nbr + item_nbr + resultspeed + heat,
-                data = trn_sell,
-                method = "lm",
-                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
-                metric = "RMSE"
-                )
-
-set.seed(425)
-lm2_mod = train(units ~ store_nbr + item_nbr + resultspeed,
-                data = trn_sell,
-                method = "lm",
-                trControl = trainControl(method = "LGOCV", p = 0.8, number = 1),
-                metric = "RMSE"
-                )
-```
-
-
-
-
-
-
-
-
-```{r trnsell-poisson-reg}
+```{r trnsell-poisson-reg, eval = FALSE}
 # pois reg p shitty
 set.seed(425)
 poiss_mod = train(units ~ store_nbr + item_nbr + resultspeed + heat,
@@ -623,13 +514,7 @@ poiss_mod = train(units ~ store_nbr + item_nbr + resultspeed + heat,
                 )
 ```
 
-
-
-
-
-
-
-```{r EXTR-randomForest}
+```{r EXTR-randomForest, eval = FALSE}
 library(doParallel)
 c1 = makeForkCluster(3)
 registerDoParallel(c1)
@@ -638,8 +523,7 @@ rf_mod = train(units ~ . - station_nbr - date,
                data = trn_tukey,
                method = "rf",
                trControl = trainControl(method = "cv",
-                                        number = 5, 
-                                        allowParallel = TRUE),
+                                        number = 5),
                metric = "RMSE",
                verbose = FALSE
                )
@@ -681,31 +565,77 @@ weather_status %>%
     kable_styling("striped", latex_options = c("scale_down", "hold_position"))
 ```
 
-*Fig.2* Sample of statistics of first model
-
-```{r AP-summary-stat-lm1, eval = FALSE}
-md1_coef
-```
-
-*Fig.3* Sample of plot of residuals of first model
+*Fig.2* Sample of plot of residuals of first model
 
 ```{r AP-pred-v-res-1}
 sam = sample(1:nrow(trn_s), round(nrow(trn_s) * .4, 0))
 plot(predict(md1)[sam], md1$residuals[sam], xlab = "Fitted", ylab = "Residuals")
 ```
 
-*Fig.5* Distributions of sales by store
+*Fig.3* Distributions of sales by store
 
 ```{r APP-dist-sale}
 c19
 ```
 
-*Fig.6* Plot of first linear model
+*Fig.4* Plot of first linear model
 
 ```{r APP-resid-lev-p1, cache = TRUE}
 plot(md1, which = 5)
 ```
 
+*Fig.5* Initial VIFs
+
+```{r initial-VIF}
+vif(lm(units ~ tmax + tmin + dewpoint + wetbulb + heat + cool, data = trn_s))
+```
+
+*Fig.6* Reduced VIFs
+
+```{r reduced-VIF}
+vif(lm(units ~ tmax + dewpoint + cool, data = trn_s))
+```
+
+*Fig.7* Distribution of Units Sold by Store and Item
+
+```{r dist-un-str}
+trn_s %>% 
+    group_by(store_nbr, item_nbr) %>% 
+    summarise("totUnits" = sum(units)) %>%
+    ggplot() +
+    geom_histogram(aes(x = totUnits)) + 
+    labs(x = "Total Units Sold")
+```
+
+*Fig.8* Distribution of Units Sold by Store and Item without 0
+
+```{r dist-un-str-no0}
+trn_s %>% 
+    group_by(store_nbr, item_nbr) %>% 
+    summarise("totUnits" = sum(units)) %>%
+    filter(!(totUnits == 0)) %>%
+    ggplot() +
+    geom_histogram(aes(x = totUnits)) + 
+    labs(x = "Total Units Sold")
+```
+
+*Fig.9* Residuals of Units vs fitted
+
+```{r fig9}
+plot(trn_s$tmax, lmp1_mod$residuals, xlab = "Max Temperature", ylab = "Residuals")
+```
+
+*Fig.10* Residuals of Units vs fitted
+
+```{r fig9}
+plot(trn_s$tmax, lmp1_mod$residuals, xlab = "Max Temperature", ylab = "Residuals")
+```
+
+*Fig.11* Residuals of Units vs fitted
+
+```{r fig9}
+plot(trn_s$tmax, lmp3_mod$residuals, xlab = "Max Temperature", ylab = "Residuals")
+```
 
 #### Data Dictionary
 
